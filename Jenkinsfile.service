@@ -1,0 +1,171 @@
+#!/usr/bin/env groovy
+/**
+TEMPLATE DIRECTIONS:
+1. Copy this file to Jenkinsfile at root of new repo, or merge in appropriate items if one already exists
+2. Find/replace "{{SERVICE}}" with your package name
+3. If {{SERVICE}} doesn't live at the root level, replace all ${STAGE_NAME} references
+with the path to your package, relative to root
+4. Change environment parameters registry and registry credentials to yours (ideally make them Jenkins secrets) 
+    Reference: https://medium.com/@gustavo.guss/jenkins-building-docker-image-and-sending-to-registry-64b84ea45ee9
+
+This Jenkinsfile utilizes a pre-built python3.6 image to lint, test, build, and upload a Docker image. 
+
+DISCLAIMER: This template was modified from a project-specific Jenkinsfile. It has not been tested
+explicitly so some modifications may be required. The general structure should be valid. YMMV.
+
+**/
+
+// Python {{SERVICE}} Service Variables
+def {{SERVICE}}Path = '{{SERVICE}}'
+def {{SERVICE}}ImageName = 'image-{{SERVICE}}' 
+def {{SERVICE}}Image
+
+/**
+ * Executes code style linting for python
+ *
+ * @param directories Space-separated string indicating directories to check
+ */
+def validateStyle(directory) {
+    sh """
+        # Install dependencies    
+        python3 -m pip install black flake8
+        
+        # Execute linters: black and flake8.
+        black --check ${directory}
+        flake8 --config=${env.WORKSPACE}/.flake8 ${directory}
+    """      
+}
+
+/**
+ * Executes unit testing with pytest
+ * 
+ * @param previously created image variable using docker.build()
+ * @param directory Directory to execute tests
+ */
+def runTests(image, directory) {
+    script {
+        image.inside("--entrypoint=''") {
+                sh """
+                    cd ${directory}
+                    python3 -m pip install -r requirements_dev.txt
+                    pytest .
+                """
+        }
+    }
+}
+
+/**
+ * Exports the current test-results directory as a Jenkins report
+ * Includes test results and code coverage
+ *
+ * Run this after executing runTests inside the post { always {...} } stage
+ * 
+ * @param directory Directory to export back to Jenkins 
+ */
+def exportTestResults(directory) {
+    junit(
+        allowEmptyResults: true,
+        keepLongStdio: true,
+        testResults: "**/test-results/*.xml"
+    )       
+    publishHTML([
+        allowMissing: true,
+        alwaysLinkToLastBuild: false,
+        keepAll: true,
+        reportDir: "${env.WORKSPACE}/${directory}/test-results/coverage",
+        reportFiles: "index.html",
+        reportName: "Coverage Report - ${directory}",
+        reportTitles: "${directory}:${env.BUILD_NUMBER} Coverage Index"
+    ])        
+}
+
+/**
+ * Build Docker image for a given directory
+ * 
+ * @param directory Directory to export back to Jenkins 
+ * @imageName Name to give the image when building
+ *
+ * @return builtImage Docker image object for later testing/upload
+ */
+def buildImage(directory, imageName) {
+    dir(directory) {
+        script {
+            builtImage = docker.build("${imageName}:${env.BUILD_NUMBER}")
+            return builtImage
+        }
+    } 
+}
+
+/**
+ * BEGIN PIPELINE
+ *
+ */
+pipeline {
+    agent any
+    environment {
+        // CHange these to your credentials
+        registry = "docker_hub_account/repository_name"
+        registryCredential = ‘dockerhub’
+    }     
+    stages {
+        stage('Checkout repo') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('Python') {
+            parallel {
+                stage({{SERVICE}}Path) {
+                    stages {
+                        stage('Lint') {
+                            agent {
+                                docker {
+                                    image "python:3.6-stretch"
+                                    alwaysPull "true"
+                                }  
+                            }
+                            steps {
+                                validateStyle({{SERVICE}}Path)
+                            }
+                        }
+                        stage('Build Image') {
+                            steps {
+                                script {
+                                    {{SERVICE}}Image = buildImage({{SERVICE}}Path, {{SERVICE}}ImageName, true)
+                                }
+                            }                         
+                        }
+                        stage('Run Tests') {
+                            steps {
+                                runTests({{SERVICE}}Image, {{SERVICE}}Path)
+                            }
+                            post {
+                                always {
+                                    exportTestResults({{SERVICE}}Path)
+                                }
+                            }                              
+                        }
+                        stage('Upload Image') {
+                            when {
+                                branch 'dev'
+                            }
+                            steps {
+                                script {
+                                    docker.withRegistry( registry, registryCredential ) {
+                                        {{SERVICE}}Image.push()
+                                        {{SERVICE}}Image.push('latest')
+                                    }
+                                }
+                            }
+                        }                          
+                    }
+                    post {
+                        cleanup {
+                            sh "docker rmi ${{{SERVICE}}Image.id}"
+                        }
+                    }                    
+                }
+            }
+        }
+    }
+}

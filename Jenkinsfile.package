@@ -1,0 +1,159 @@
+#!/usr/bin/env groovy
+/**
+TEMPLATE DIRECTIONS:
+1. Copy this file to Jenkinsfile at root of new repo, or merge in appropriate items if one already exists
+2. Find/replace "{{PACKAGE}}" with your package name
+3. If {{PACKAGE}} doesn't live at the root level, replace all ${STAGE_NAME} references
+with the path to your package, relative to root
+4. Change {{TWINE_USERNAME}} and {{TWINE_PASSWORD}} to your credentials for PyPI upload (preferablly
+these should live as Jenkins SECRET variables instead).
+
+This Jenkinsfile utilizes a pre-built python3.6 image to lint, test, package, and release a package. It 
+relies on a proper setuptools configuration for test, pip3 being accessible, and twine pre-configured
+
+DISCLAIMER: This template was modified from an application-specific Jenkinsfile. It has not been tested
+explicitly so some modifications may be required. The general structure should be valid. YMMV.
+
+Document generation assumes sphinx is installed and managed in setup.cfg. A good example for this is
+the cookiecutter-pypackage: https://github.com/audreyr/cookiecutter-pypackage
+
+**/ 
+
+/**
+ * Executes code style linting and unit tests
+ * using setuptools and pytest directly
+ *
+ * @param packageName Name of package to test
+ */
+def runTests(packageName) {
+    sh """
+        cd ${packageName}
+
+        # Run linting / code-formatt checks
+        pip3 install --upgrade --user pip black flake8
+        python3 -m black .
+        python3 -m flake8 --config=${env.WORKSPACE}/.flake8 .
+
+        # Now run unit tests
+        python3 setup.py test
+    """      
+}
+
+/**
+ * Package python module using setuptools and upload to PyPI
+ * with Twine. 
+ *
+ * @param packageName Name of package to build release for
+ */
+def packageUpload(packageName) {
+    sh """
+        # Build
+        cd ${packageName}
+        pip3 install --upgrade --user pip setuptools twine
+        python3 setup.py sdist bdist_wheel
+        ls -l dist
+        
+        # Upload
+        python3 -m twine upload dist/* 
+    """      
+}
+
+/**
+ * Builds docs using setuptools
+ *
+ * @param packageName Name of package to document
+ */
+def buildDocs(packageName) {
+    sh """
+        # Install package so docs can be built from setuptools
+        cd ${packageName}
+        python3 setup.py install --user 
+
+        # Build docs
+        python3 setup.py docs
+    """      
+}
+
+pipeline {
+    agent {
+        docker {
+            image "python:3.6-stretch"
+            alwaysPull "true"
+        }
+    }      
+    options {
+        newContainerPerStage()
+    }
+    environment {
+        // Set credentials for PyPI uploads. 
+        TWINE_USERNAME = {{TWINE_USERNAME}}
+        TWINE_PASSWORD = {{TWINE_PASSWORD}}
+    }      
+    stages {
+        // Test Suite includes linting and unit tests
+        stage('Execute Test Suite') {
+            parallel {
+                stage('{{PACKAGE}}') {
+                    steps {
+                        runTests("${STAGE_NAME}")
+                    }    
+                    post {
+                        always {
+                            junit(
+                                allowEmptyResults: true,
+                                keepLongStdio: true,
+                                testResults: "**/test-results/*.xml"
+                            )       
+                            publishHTML([
+                                allowMissing: true,
+                                alwaysLinkToLastBuild: false,
+                                keepAll: true,
+                                reportDir: "${env.WORKSPACE}/${STAGE_NAME}/test-results/coverage",
+                                reportFiles: "index.html",
+                                reportName: "Coverage Report - ${STAGE_NAME}",
+                                reportTitles: "${STAGE_NAME}:${env.BUILD_NUMBER} Coverage Index"
+                            ])                            
+                        }
+                    }                    
+                }
+            }
+        }
+        stage('Package and Upload') {
+            when {
+                branch 'dev'
+            }            
+            parallel {
+                stage('{{PACKAGE}}') {
+                    steps {
+                        packageUpload("${STAGE_NAME}")
+                    }                           
+                }
+            }
+        }
+        stage('Generate Docs') {
+            when {
+                branch 'dev'
+            }           
+            parallel {
+                stage('{{PACKAGE}}') {
+                    steps {
+                        buildDocs("${STAGE_NAME}")
+                    }
+                    post {
+                        always {
+                            publishHTML([
+                                allowMissing: true,
+                                alwaysLinkToLastBuild: false,
+                                keepAll: true,
+                                reportDir: "${env.WORKSPACE}/${STAGE_NAME}/build/sphinx/html",
+                                reportFiles: "index.html",
+                                reportName: "Software Docs - ${STAGE_NAME}",
+                                reportTitles: "${STAGE_NAME}:${env.BUILD_NUMBER} Software Docs Index"
+                            ])                            
+                        }
+                    }                    
+                }
+            }
+        }
+    }
+}
