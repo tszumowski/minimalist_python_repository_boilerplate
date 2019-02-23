@@ -2,7 +2,7 @@
 
 This directory contains boilerplate files for new python repositories.
 
-**Reference Medium Articles:**:
+**Reference Medium Articles:**
 * [Using Jenkins to Automate Packaging and Deployment](https://medium.com/@tszumowski/using-jenkins-to-automate-packaging-and-deployment-cb8aba34a61a)
 * [Helpful Repository Boilerplates](https://medium.com/@tszumowski/helpful-python-repository-boilerplates-26cb2a296ba4)
 
