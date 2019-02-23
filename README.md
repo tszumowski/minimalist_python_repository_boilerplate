@@ -30,7 +30,14 @@ Default configuration for running `pytest`. This ini includes various plugins to
 Provides defaults for flake8 code formatting. Includes ignore-lines that make it compatible with `black`
 
 ## Jenkinsfile Examples
-### For python packages/libraries
 
-### For python applications
+These are example of how to automate linting, testing, and dispatching python packages and applications. See the headers of each file for details and usage.
+They were modified from a project-specific version so they weren't tested. YMMV. Leave a message in the Issues if you have questions on usage or issues
+using them.
+
+**Jenkinsfile.package**
+* For linting, testing, packaging, and uploading wheels of a python package
+
+**Jenkinsfile.application**
+* For linting, testing, building a Docker image, and pushing Docker image of a deployable Python3 application container. 
 
