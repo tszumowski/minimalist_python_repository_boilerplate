@@ -11,7 +11,7 @@ these should live as Jenkins SECRET variables instead).
 This Jenkinsfile utilizes a pre-built python3.6 image to lint, test, package, and release a package. It 
 relies on a proper setuptools configuration for test, pip3 being accessible, and twine pre-configured
 
-DISCLAIMER: This template was modified from an application-specific Jenkinsfile. It has not been tested
+DISCLAIMER: This template was modified from a project-specific Jenkinsfile. It has not been tested
 explicitly so some modifications may be required. The general structure should be valid. YMMV.
 
 Document generation assumes sphinx is installed and managed in setup.cfg. A good example for this is
@@ -30,7 +30,7 @@ def runTests(packageName) {
         cd ${packageName}
 
         # Run linting / code-formatt checks
-        pip3 install --upgrade --user pip black flake8
+        python3 -m pip install --upgrade pip black flake8
         python3 -m black .
         python3 -m flake8 --config=${env.WORKSPACE}/.flake8 .
 
@@ -49,7 +49,7 @@ def packageUpload(packageName) {
     sh """
         # Build
         cd ${packageName}
-        pip3 install --upgrade --user pip setuptools twine
+        python3 -m pip install --upgrade pip setuptools twine
         python3 setup.py sdist bdist_wheel
         ls -l dist
         
