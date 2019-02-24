@@ -1,3 +1,7 @@
+# Install dependencies
+-r requirements.txt
+
+# INstall test dependencies
 black
 flake8
 pytest
